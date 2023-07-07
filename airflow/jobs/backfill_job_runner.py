@@ -68,7 +68,7 @@ class BackfillJobRunner(BaseJobRunner[Job], LoggingMixin):
 
     job_type = "BackfillJob"
 
-    STATES_COUNT_AS_RUNNING = (TaskInstanceState.RUNNING, TaskInstanceState.QUEUED)
+    STATES_COUNT_AS_RUNNING = (State.RUNNING, State.QUEUED)
 
     @attr.define
     class _DagRunTaskStatus:
@@ -219,7 +219,7 @@ class BackfillJobRunner(BaseJobRunner[Job], LoggingMixin):
             # is changed externally, e.g. by clearing tasks from the ui. We need to cover
             # for that as otherwise those tasks would fall outside the scope of
             # the backfill suddenly.
-            elif ti.state is None:
+            elif ti.state == State.NONE:
                 self.log.warning(
                     "FIXME: task instance %s state was set to none externally or "
                     "reaching concurrency limits. Re-adding task to queue.",
@@ -540,10 +540,7 @@ class BackfillJobRunner(BaseJobRunner[Job], LoggingMixin):
 
                         cfg_path = None
 
-                        executor_class, _ = ExecutorLoader.import_executor_cls(
-                            self.job.executor_class,
-                        )
-                        if executor_class.is_local:
+                        if executor.is_local:
                             cfg_path = tmp_configuration_copy()
 
                         executor.queue_task_instance(
@@ -819,8 +816,7 @@ class BackfillJobRunner(BaseJobRunner[Job], LoggingMixin):
         session: Session = NEW_SESSION,
     ) -> None:
         """
-        Go through the dag_runs and update the state based on the task_instance state.
-        Then set DAG runs that are not finished to failed.
+        Update the state of each dagrun based on the task_instance state and set unfinished runs to failed.
 
         :param dag_runs: DAG runs
         :param session: session
@@ -1004,7 +1000,7 @@ class BackfillJobRunner(BaseJobRunner[Job], LoggingMixin):
             ).all()
 
             for ti in reset_tis:
-                ti.state = None
+                ti.state = State.NONE
                 session.merge(ti)
 
             return result + reset_tis

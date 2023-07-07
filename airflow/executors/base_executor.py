@@ -31,7 +31,7 @@ from airflow.configuration import conf
 from airflow.exceptions import RemovedInAirflow3Warning
 from airflow.stats import Stats
 from airflow.utils.log.logging_mixin import LoggingMixin
-from airflow.utils.state import TaskInstanceState
+from airflow.utils.state import State
 
 PARALLELISM: int = conf.getint("core", "PARALLELISM")
 
@@ -54,7 +54,7 @@ if TYPE_CHECKING:
 
     # Event_buffer dict value type
     # Tuple of: state, info
-    EventBufferValueType = Tuple[Optional[TaskInstanceState], Any]
+    EventBufferValueType = Tuple[Optional[str], Any]
 
     # Task tuple to send to be executed
     TaskTuple = Tuple[TaskInstanceKey, CommandType, Optional[str], Optional[Any]]
@@ -82,10 +82,7 @@ class RunningRetryAttemptType:
         return (pendulum.now("UTC") - self.first_attempt_time).total_seconds()
 
     def can_try_again(self):
-        """
-        If there has been at least one try greater than MIN_SECONDS after first attempt,
-        then return False.  Otherwise, return True.
-        """
+        """Return False if there has been at least one try greater than MIN_SECONDS, otherwise return True."""
         if self.tries_after_min > 0:
             return False
 
@@ -100,11 +97,9 @@ class RunningRetryAttemptType:
 
 class BaseExecutor(LoggingMixin):
     """
-    Class to derive in order to implement concrete executors.
-    Such as, Celery, Kubernetes, Local, Sequential and the likes.
+    Base class to inherit for concrete executors such as Celery, Kubernetes, Local, Sequential, etc.
 
-    :param parallelism: how many jobs should run at one time. Set to
-        ``0`` for infinity.
+    :param parallelism: how many jobs should run at one time. Set to ``0`` for infinity.
     """
 
     supports_ad_hoc_ti_run: bool = False
@@ -201,6 +196,7 @@ class BaseExecutor(LoggingMixin):
     def sync(self) -> None:
         """
         Sync will get called periodically by the heartbeat method.
+
         Executors should override this to perform gather statuses.
         """
 
@@ -298,7 +294,7 @@ class BaseExecutor(LoggingMixin):
             self.execute_async(key=key, command=command, queue=queue, executor_config=executor_config)
             self.running.add(key)
 
-    def change_state(self, key: TaskInstanceKey, state: TaskInstanceState, info=None) -> None:
+    def change_state(self, key: TaskInstanceKey, state: str, info=None) -> None:
         """
         Changes state of the task.
 
@@ -320,7 +316,7 @@ class BaseExecutor(LoggingMixin):
         :param info: Executor information for the task instance
         :param key: Unique key for the task instance
         """
-        self.change_state(key, TaskInstanceState.FAILED, info)
+        self.change_state(key, State.FAILED, info)
 
     def success(self, key: TaskInstanceKey, info=None) -> None:
         """
@@ -329,7 +325,7 @@ class BaseExecutor(LoggingMixin):
         :param info: Executor information for the task instance
         :param key: Unique key for the task instance
         """
-        self.change_state(key, TaskInstanceState.SUCCESS, info)
+        self.change_state(key, State.SUCCESS, info)
 
     def get_event_buffer(self, dag_ids=None) -> dict[TaskInstanceKey, EventBufferValueType]:
         """
@@ -390,6 +386,7 @@ class BaseExecutor(LoggingMixin):
     def cleanup_stuck_queued_tasks(self, tis: list[TaskInstance]) -> list[str]:  # pragma: no cover
         """
         Handle remnants of tasks that were failed because they were stuck in queued.
+
         Tasks can get stuck in queued. If such a task is detected, it will be marked
         as `UP_FOR_RETRY` if the task instance has remaining retries or marked as `FAILED`
         if it doesn't.
